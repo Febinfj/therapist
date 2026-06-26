@@ -18,8 +18,6 @@ const checkCrisisLanguage = (text) => {
   return CRISIS_KEYWORDS.some(keyword => normalized.includes(keyword));
 };
 
-def createRoot; // (Ignored placeholder to avoid compile alerts)
-
 function App() {
   // Authentication State
   const [user, setUser] = useState(null); // String (username) or null
