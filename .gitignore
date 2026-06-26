@@ -1,0 +1,19 @@
+# Dependency directories
+node_modules/
+frontend/node_modules/
+
+# Local databases
+data/*.json
+
+# Production build outputs
+dist/
+frontend/dist/
+
+# Environment variables
+.env
+.env.local
+
+# System Files
+.DS_Store
+Thumbs.db
+.vercel
