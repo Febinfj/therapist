@@ -19,7 +19,9 @@ app.use(express.json());
 
 // Normalize paths for Vercel serverless routing (handles prefix stripping)
 app.use((req, res, next) => {
-  if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/assets')) {
+  if (req.query && req.query.path) {
+    req.url = '/api/' + req.query.path;
+  } else if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/assets')) {
     req.url = '/api' + req.url;
   }
   next();
