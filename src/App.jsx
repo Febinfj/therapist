@@ -18,6 +18,8 @@ const checkCrisisLanguage = (text) => {
   return CRISIS_KEYWORDS.some(keyword => normalized.includes(keyword));
 };
 
+def createRoot; // (Ignored placeholder to avoid compile alerts)
+
 function App() {
   // Authentication State
   const [user, setUser] = useState(null); // String (username) or null
@@ -64,11 +66,10 @@ function App() {
 
   // ==================== AUTH & SESSION LOADING ====================
 
-  const loadSessions = async (username, anonymousMode) => {
+  const loadSessions = (username, anonymousMode) => {
     if (anonymousMode) {
       const anonSessions = JSON.parse(localStorage.getItem('haven_anon_sessions') || '[]');
       setSessions(anonSessions);
-      // Auto-load latest session if available and not ended
       if (anonSessions.length > 0) {
         const latest = anonSessions[0];
         setCurrentSession(latest);
@@ -79,44 +80,17 @@ function App() {
         setCurrentSession(null);
       }
     } else {
-      try {
-        const res = await fetch(`${API_BASE}/api/sessions`, {
-          headers: { 'x-username': username }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Sort by creation date desc
-          const sorted = data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-          setSessions(sorted);
-          if (sorted.length > 0) {
-            // Load detail of latest session
-            fetchSessionDetail(sorted[0].id, username);
-          } else {
-            setCurrentSession(null);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load sessions:", err);
-      }
-    }
-  };
-
-  const fetchSessionDetail = async (sessionId, username) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
-        headers: { 'x-username': username }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentSession(data);
-        if (data.messages.some(m => m.isCrisis)) {
+      const userSessions = JSON.parse(localStorage.getItem(`haven_sessions_${username}`) || '[]');
+      setSessions(userSessions);
+      if (userSessions.length > 0) {
+        const latest = userSessions[0];
+        setCurrentSession(latest);
+        if (latest.messages.some(m => m.isCrisis)) {
           setCrisisAlertActive(true);
-        } else {
-          setCrisisAlertActive(false);
         }
+      } else {
+        setCurrentSession(null);
       }
-    } catch (err) {
-      console.error("Error loading session details:", err);
     }
   };
 
@@ -130,31 +104,42 @@ function App() {
     setAuthError('');
     setIsLoadingAuth(true);
 
-    const endpoint = authScreen === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const users = JSON.parse(localStorage.getItem('haven_registered_users') || '[]');
     
-    try {
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput })
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setUser(data.username);
-        setIsAnonymous(false);
-        sessionStorage.setItem('haven_username', data.username);
-        sessionStorage.removeItem('haven_anonymous');
-        setUsernameInput('');
-        setPasswordInput('');
-        loadSessions(data.username, false);
-      } else {
-        setAuthError(data.error || "An error occurred");
+    if (authScreen === 'signup') {
+      if (users.find(u => u.username.toLowerCase() === usernameInput.toLowerCase())) {
+        setAuthError("Username already exists");
+        setIsLoadingAuth(false);
+        return;
       }
-    } catch (err) {
-      setAuthError("Could not connect to authentication server.");
-    } finally {
+      const newUser = { username: usernameInput, password: passwordInput };
+      users.push(newUser);
+      localStorage.setItem('haven_registered_users', JSON.stringify(users));
+      
+      setUser(usernameInput);
+      setIsAnonymous(false);
+      sessionStorage.setItem('haven_username', usernameInput);
+      sessionStorage.removeItem('haven_anonymous');
+      setUsernameInput('');
+      setPasswordInput('');
+      loadSessions(usernameInput, false);
+      setIsLoadingAuth(false);
+    } else {
+      // Login
+      const userMatch = users.find(u => u.username.toLowerCase() === usernameInput.toLowerCase() && u.password === passwordInput);
+      if (!userMatch) {
+        setAuthError("Invalid username or password");
+        setIsLoadingAuth(false);
+        return;
+      }
+      
+      setUser(userMatch.username);
+      setIsAnonymous(false);
+      sessionStorage.setItem('haven_username', userMatch.username);
+      sessionStorage.removeItem('haven_anonymous');
+      setUsernameInput('');
+      setPasswordInput('');
+      loadSessions(userMatch.username, false);
       setIsLoadingAuth(false);
     }
   };
@@ -177,89 +162,54 @@ function App() {
     sessionStorage.clear();
   };
 
-  // ==================== CHAT ACTIONS ====================
+  const handleStartNewSession = () => {
+    const newSession = {
+      id: (isAnonymous ? 'anon_sess_' : 'sess_') + Math.random().toString(36).substr(2, 9),
+      title: `Session on ${new Date().toLocaleDateString()}`,
+      createdAt: new Date().toISOString(),
+      messages: [],
+      isEnded: false,
+      summary: null,
+      copingSteps: []
+    };
 
-  const handleStartNewSession = async () => {
+    const updated = [newSession, ...sessions];
+    setSessions(updated);
+    setCurrentSession(newSession);
+    setCrisisAlertActive(false);
+    
     if (isAnonymous) {
-      const newSession = {
-        id: 'anon_sess_' + Math.random().toString(36).substr(2, 9),
-        title: `Session on ${new Date().toLocaleDateString()}`,
-        createdAt: new Date().toISOString(),
-        messages: [],
-        isEnded: false,
-        summary: null,
-        copingSteps: []
-      };
-
-      const updated = [newSession, ...sessions];
-      setSessions(updated);
-      setCurrentSession(newSession);
-      setCrisisAlertActive(false);
       localStorage.setItem('haven_anon_sessions', JSON.stringify(updated));
     } else {
-      try {
-        const res = await fetch(`${API_BASE}/api/sessions`, {
-          method: 'POST',
-          headers: { 'x-username': user }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setSessions(prev => [data, ...prev]);
-          setCurrentSession(data);
-          setCrisisAlertActive(false);
-        }
-      } catch (err) {
-        console.error("Failed to create new session:", err);
-      }
+      localStorage.setItem(`haven_sessions_${user}`, JSON.stringify(updated));
     }
   };
 
   const handleSelectSession = (session) => {
-    if (isAnonymous) {
-      const selected = sessions.find(s => s.id === session.id);
-      setCurrentSession(selected);
-      if (selected.messages.some(m => m.isCrisis)) {
-        setCrisisAlertActive(true);
-      } else {
-        setCrisisAlertActive(false);
-      }
+    const selected = sessions.find(s => s.id === session.id);
+    setCurrentSession(selected);
+    if (selected.messages.some(m => m.isCrisis)) {
+      setCrisisAlertActive(true);
     } else {
-      fetchSessionDetail(session.id, user);
+      setCrisisAlertActive(false);
     }
   };
 
-  const handleDeleteSession = async (e, sessionId) => {
+  const handleDeleteSession = (e, sessionId) => {
     e.stopPropagation();
     if (window.confirm("Are you sure you want to delete this session?")) {
+      const updated = sessions.filter(s => s.id !== sessionId);
+      setSessions(updated);
+      
       if (isAnonymous) {
-        const updated = sessions.filter(s => s.id !== sessionId);
-        setSessions(updated);
         localStorage.setItem('haven_anon_sessions', JSON.stringify(updated));
-        if (currentSession?.id === sessionId) {
-          setCurrentSession(updated.length > 0 ? updated[0] : null);
-          setCrisisAlertActive(false);
-        }
       } else {
-        try {
-          const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
-            method: 'DELETE',
-            headers: { 'x-username': user }
-          });
-          if (res.ok) {
-            const updated = sessions.filter(s => s.id !== sessionId);
-            setSessions(updated);
-            if (currentSession?.id === sessionId) {
-              if (updated.length > 0) {
-                fetchSessionDetail(updated[0].id, user);
-              } else {
-                setCurrentSession(null);
-                setCrisisAlertActive(false);
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Failed to delete session:", err);
-        }
+        localStorage.setItem(`haven_sessions_${user}`, JSON.stringify(updated));
+      }
+      
+      if (currentSession?.id === sessionId) {
+        setCurrentSession(updated.length > 0 ? updated[0] : null);
+        setCrisisAlertActive(false);
       }
     }
   };
@@ -294,136 +244,78 @@ function App() {
 
     setIsTyping(true);
 
-    if (isAnonymous) {
-      // Offline/Local Simulated chat calling backend parser
-      try {
-        const response = await fetch(`${API_BASE}/api/anonymous/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: messageText, history: currentSession.messages })
-        });
+    try {
+      const response = await fetch(`${API_BASE}/api/anonymous/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: messageText, history: currentSession.messages })
+      });
 
-        const data = await response.json();
-        
-        let therapistMsg;
-        let finalSessionState;
+      const data = await response.json();
+      
+      let therapistMsg;
+      let finalSessionState;
 
-        if (data.isCrisis) {
-          therapistMsg = {
-            id: 'msg_' + Math.random().toString(36).substr(2, 9),
-            sender: 'therapist',
-            text: data.reply,
-            isCrisis: true,
-            resources: data.resources,
-            createdAt: new Date().toISOString()
-          };
+      if (data.isCrisis) {
+        therapistMsg = {
+          id: 'msg_' + Math.random().toString(36).substr(2, 9),
+          sender: 'therapist',
+          text: data.reply,
+          isCrisis: true,
+          resources: data.resources,
+          createdAt: new Date().toISOString()
+        };
 
-          finalSessionState = {
-            ...updatedSession,
-            messages: [...updatedMessages, therapistMsg],
-            isEnded: true,
-            title: `Crisis Event - ${new Date().toLocaleDateString()}`,
-            summary: "Session closed due to detected crisis keywords. Immediate support helplines provided.",
-            copingSteps: data.resources.helplines.map(h => ({ title: h.name, instruction: h.details }))
-          };
-          setCrisisAlertActive(true);
-        } else {
-          therapistMsg = {
-            id: 'msg_' + Math.random().toString(36).substr(2, 9),
-            sender: 'therapist',
-            text: data.reply,
-            createdAt: new Date().toISOString()
-          };
+        finalSessionState = {
+          ...updatedSession,
+          messages: [...updatedMessages, therapistMsg],
+          isEnded: true,
+          title: `Crisis Event - ${new Date().toLocaleDateString()}`,
+          summary: "Session closed due to detected crisis keywords. Immediate support helplines provided.",
+          copingSteps: data.resources.helplines.map(h => ({ title: h.name, instruction: h.details }))
+        };
+        setCrisisAlertActive(true);
+      } else {
+        therapistMsg = {
+          id: 'msg_' + Math.random().toString(36).substr(2, 9),
+          sender: 'therapist',
+          text: data.reply,
+          createdAt: new Date().toISOString()
+        };
 
-          // Update anonymous title dynamically on first text
-          let finalTitle = currentSession.title;
-          const userMessageCount = updatedMessages.filter(m => m.sender === 'user').length;
-          if (userMessageCount === 1) {
-            const words = messageText.split(' ').slice(0, 4).join(' ');
-            finalTitle = words.length > 3 ? `Topic: "${words}..."` : currentSession.title;
-          }
-
-          finalSessionState = {
-            ...updatedSession,
-            title: finalTitle,
-            messages: [...updatedMessages, therapistMsg]
-          };
+        // Update title dynamically on first text
+        let finalTitle = currentSession.title;
+        const userMessageCount = updatedMessages.filter(m => m.sender === 'user').length;
+        if (userMessageCount === 1) {
+          const words = messageText.split(' ').slice(0, 4).join(' ');
+          finalTitle = words.length > 3 ? `Topic: "${words}..."` : currentSession.title;
         }
 
-        setCurrentSession(finalSessionState);
+        finalSessionState = {
+          ...updatedSession,
+          title: finalTitle,
+          messages: [...updatedMessages, therapistMsg]
+        };
+      }
 
-        // Update list
-        const updatedList = sessions.map(s => s.id === currentSession.id ? finalSessionState : s);
-        setSessions(updatedList);
+      setCurrentSession(finalSessionState);
+
+      // Update list and save
+      const updatedList = sessions.map(s => s.id === currentSession.id ? finalSessionState : s);
+      setSessions(updatedList);
+      
+      if (isAnonymous) {
         localStorage.setItem('haven_anon_sessions', JSON.stringify(updatedList));
-
-      } catch (err) {
-        console.error("Local simulated message failed:", err);
-      } finally {
-        setIsTyping(false);
+      } else {
+        localStorage.setItem(`haven_sessions_${user}`, JSON.stringify(updatedList));
       }
-    } else {
-      // Registered user - API request to backend
-      try {
-        const res = await fetch(`${API_BASE}/api/sessions/${currentSession.id}/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-username': user
-          },
-          body: JSON.stringify({ text: messageText })
-        });
 
-        if (res.ok) {
-          const data = await res.json();
-          
-          let finalSessionState;
-
-          if (data.isEnded) {
-            // Crisis response occurred
-            finalSessionState = {
-              ...currentSession,
-              messages: [...updatedMessages, data.therapistMessage],
-              isEnded: true,
-              summary: data.summary,
-              copingSteps: data.copingSteps
-            };
-            setCrisisAlertActive(true);
-          } else {
-            finalSessionState = {
-              ...currentSession,
-              messages: [...updatedMessages, data.therapistMessage]
-            };
-          }
-
-          // Dynamic Title Update on first message
-          const userMessageCount = updatedMessages.filter(m => m.sender === 'user').length;
-          if (userMessageCount === 1) {
-            const words = messageText.split(' ').slice(0, 4).join(' ');
-            finalSessionState.title = words.length > 3 ? `Topic: "${words}..."` : currentSession.title;
-          }
-
-          setCurrentSession(finalSessionState);
-
-          // Update sidebar list
-          const updatedList = sessions.map(s => s.id === currentSession.id ? { 
-            ...s, 
-            title: finalSessionState.title,
-            isEnded: finalSessionState.isEnded,
-            summary: finalSessionState.summary,
-            copingSteps: finalSessionState.copingSteps
-          } : s);
-          setSessions(updatedList);
-        }
-      } catch (err) {
-        console.error("Server API message failed:", err);
-      } finally {
-        setIsTyping(false);
-      }
+    } catch (err) {
+      console.error("Message request failed:", err);
+    } finally {
+      setIsTyping(false);
     }
   };
-
-  // ==================== END SESSION AND SUMMARY ====================
 
   const handleEndSession = async () => {
     setShowEndSessionConfirm(false);
@@ -431,58 +323,36 @@ function App() {
 
     setIsTyping(true);
 
-    if (isAnonymous) {
-      // Local summary endpoint
-      try {
-        const res = await fetch(`${API_BASE}/api/anonymous/summary`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: currentSession.messages })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const finalSessionState = {
-            ...currentSession,
-            isEnded: true,
-            summary: data.summary,
-            copingSteps: data.copingSteps
-          };
+    try {
+      const res = await fetch(`${API_BASE}/api/anonymous/summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: currentSession.messages })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const finalSessionState = {
+          ...currentSession,
+          isEnded: true,
+          summary: data.summary,
+          copingSteps: data.copingSteps
+        };
 
-          setCurrentSession(finalSessionState);
+        setCurrentSession(finalSessionState);
 
-          const updatedList = sessions.map(s => s.id === currentSession.id ? finalSessionState : s);
-          setSessions(updatedList);
+        const updatedList = sessions.map(s => s.id === currentSession.id ? finalSessionState : s);
+        setSessions(updatedList);
+        
+        if (isAnonymous) {
           localStorage.setItem('haven_anon_sessions', JSON.stringify(updatedList));
+        } else {
+          localStorage.setItem(`haven_sessions_${user}`, JSON.stringify(updatedList));
         }
-      } catch (err) {
-        console.error("Failed to generate local summary:", err);
-      } finally {
-        setIsTyping(false);
       }
-    } else {
-      // Server summary endpoint
-      try {
-        const res = await fetch(`${API_BASE}/api/sessions/${currentSession.id}/end`, {
-          method: 'POST',
-          headers: { 'x-username': user }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setCurrentSession(data);
-
-          const updatedList = sessions.map(s => s.id === currentSession.id ? {
-            ...s,
-            isEnded: true,
-            summary: data.summary,
-            copingSteps: data.copingSteps
-          } : s);
-          setSessions(updatedList);
-        }
-      } catch (err) {
-        console.error("Failed to end session on server:", err);
-      } finally {
-        setIsTyping(false);
-      }
+    } catch (err) {
+      console.error("Failed to generate summary:", err);
+    } finally {
+      setIsTyping(false);
     }
   };
 
