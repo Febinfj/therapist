@@ -1,0 +1,25 @@
+[
+  {
+    "id": "sess_rpraoa39a",
+    "username": "fj",
+    "title": "Topic: \"good...\"",
+    "createdAt": "2026-06-23T02:48:06.239Z",
+    "messages": [
+      {
+        "id": "msg_f84x71sfk",
+        "sender": "user",
+        "text": "good",
+        "createdAt": "2026-06-23T02:48:10.236Z"
+      },
+      {
+        "id": "msg_2vuaxq1xa",
+        "sender": "therapist",
+        "text": "I'm so glad to hear that! Celebrating moments of joy, relief, or progress is such an important part of well-being. What do you think contributed to things feeling a bit brighter or more manageable today?",
+        "createdAt": "2026-06-23T02:48:10.236Z"
+      }
+    ],
+    "isEnded": false,
+    "summary": null,
+    "copingSteps": []
+  }
+]
